@@ -34,28 +34,29 @@ def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
 
 def init_db():
-    if not DATABASE_URL:
-        return
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS checkins (
-                id SERIAL PRIMARY KEY,
-                employee_id TEXT,
-                device_id TEXT,
-                qr_payload TEXT,
-                latitude REAL,
-                longitude REAL,
-                biometric_hash TEXT,
-                timestamp TEXT
-            )
-        """)
-        conn.commit()
-        cursor.close()
-        conn.close()
-    except Exception as e:
-        print("DB Init Error:", e)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    # Create the checkins table (already there)
+    cursor.execute("CREATE TABLE IF NOT EXISTS checkins (...)") 
+    
+    # 🟢 ADD THIS: Create the employees table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS employees (
+            employee_id TEXT PRIMARY KEY,
+            password TEXT,
+            name TEXT
+        )
+    """)
+    # 🟢 SEED DATA: Add yourself so you can log in!
+    cursor.execute("""
+        INSERT INTO employees (employee_id, password, name)
+        VALUES ('BRACU-2026', 'zarif123', 'Zarif Latif')
+        ON CONFLICT (employee_id) DO NOTHING
+    """)
+    
+    conn.commit()
+    cursor.close()
+    conn.close()
 
 def calculate_haversine(lat1, lon1, lat2, lon2):
     # Haversine formula to calculate distance in meters
@@ -68,6 +69,21 @@ def calculate_haversine(lat1, lon1, lat2, lon2):
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
 
 init_db()
+
+# Add a Login Endpoint
+@app.post("/v1/login")
+async def login(credentials: dict):
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute("SELECT * FROM employees WHERE employee_id = %s AND password = %s", 
+                   (credentials['employee_id'], credentials['password']))
+    user = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    
+    if user:
+        return {"status": "success", "user": user}
+    raise HTTPException(status_code=401, detail="Invalid Credentials")
 
 # Update POST endpoint:
 @app.post("/v1/checkin")
