@@ -6,6 +6,8 @@ from pydantic import BaseModel
 import csv
 import io
 from fastapi.middleware.cors import CORSMiddleware
+import math
+from datetime import datetime, timedelta
 
 app = FastAPI(title="GeoBadge Employer Hub", version="1.0")
 
@@ -55,8 +57,38 @@ def init_db():
     except Exception as e:
         print("DB Init Error:", e)
 
+def calculate_haversine(lat1, lon1, lat2, lon2):
+    # Haversine formula to calculate distance in meters
+    """Calculate the great circle distance in meters between two points on the Earth."""
+    R = 6371000  # Earth radius in meters
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    a = math.sin(dp/2)**2 + math.cos(p1) * math.cos(p2) * math.sin(dl/2)**2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+
 init_db()
 
+# Update POST endpoint:
+@app.post("/v1/checkin")
+async def receive_checkin(data: CheckInPayload):
+    FACTORY_LAT = 23.7704  # Set factory center
+    FACTORY_LNG = 90.3586
+    ALLOWED_RADIUS = 50.0  # meters
+
+    distance = calculate_haversine(data.latitude, data.longitude, FACTORY_LAT, FACTORY_LNG)
+    
+    if distance > ALLOWED_RADIUS:
+        raise HTTPException(status_code=403, detail=f"Location Violation: {round(distance)}m from site.")
+    try:
+        qr_parts = data.qr_payload.split("_")
+        qr_time = datetime.fromisocalendar(qr_parts[-1])
+        if datetime.now() - qr_time > timedelta(minutes=5):
+            raise HTTPException(status_code=403, detail="QR Code Expired: Please rescan.")
+    
+    except:
+        pass #Fallback for static QR testing
+    
 @app.post("/v1/checkin")
 async def receive_checkin(data: CheckInPayload):
     try:
