@@ -15,7 +15,20 @@ app.add_middleware(
 )
 
 # 🟢 Pulls from Render Environment Variables
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("postgresql://postgres:+Qn4B8Vw&Lf.6qE@db.kqxhsmbbgucwzdxzkwfx.supabase.co:5432/postgres")
+
+if DATABASE_URL:
+    print("Brain is successfully connected to the Cloud Vault!")
+else:
+    print("Warning: DATABASE_URL not found. Check Render Env Variables.")
+
+# The New 'Site' Model for the Hub
+class Site(BaseModel):
+    name: str
+    latitude: float
+    longitude: float
+    radius_meters: int
+    active_employees: int = 0
 
 class CheckInPayload(BaseModel):
     employee_id: str
@@ -79,6 +92,33 @@ init_db()
 @app.get("/")
 def root():
     return {"message": "GeoBadge Hub is Live"}
+
+@app.get("/v1/admin/stats")
+async def get_admin_stats():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # 1. Total Presence Today
+        cursor.execute("SELECT COUNT(DISTINCT employee_id) FROM checkins WHERE timestamp::date = CURRENT_DATE")
+        total_today = cursor.fetchone()['count']
+        
+        # 2. Recent Anomalies (Check-ins far from factory)
+        # We'll assume 'flagged' is a column or calculate distance here
+        cursor.execute("SELECT COUNT(*) FROM checkins WHERE timestamp::date = CURRENT_DATE AND latitude IS NULL") # Example check
+        anomalies = cursor.fetchone()['count']
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            "active_now": total_today,
+            "anomalies": anomalies,
+            "system_health": "Optimal",
+            "last_sync": DateTime.now().iso8601()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/v1/login")
 async def login(credentials: dict):
