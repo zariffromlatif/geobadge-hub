@@ -19,7 +19,7 @@ app.add_middleware(
 # Note: '&' in password is URL-encoded as '%26'
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:%2BQn4B8Vw%26Lf.6qE@db.kqxhsmbbgucwzdxzkwfx.supabase.co:5432/postgres"
+    "postgresql://postgres.kqxhsmbbgucwzdxzkwfx:%2BQn4B8Vw%26Lf.6qE@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres?sslmode=require"
 )
 
 if DATABASE_URL:
