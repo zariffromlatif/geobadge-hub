@@ -1,4 +1,5 @@
 import os
+import datetime
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from fastapi import FastAPI, HTTPException
@@ -14,8 +15,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🟢 Pulls from Render Environment Variables
-DATABASE_URL = os.getenv("postgresql://postgres:+Qn4B8Vw&Lf.6qE@db.kqxhsmbbgucwzdxzkwfx.supabase.co:5432/postgres")
+# FIX 4: Correct os.getenv usage — env var NAME first, connection string as FALLBACK
+# Note: '&' in password is URL-encoded as '%26'
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://postgres:%2BQn4B8Vw%26Lf.6qE@db.kqxhsmbbgucwzdxzkwfx.supabase.co:5432/postgres"
+)
 
 if DATABASE_URL:
     print("Brain is successfully connected to the Cloud Vault!")
@@ -104,18 +109,18 @@ async def get_admin_stats():
         total_today = cursor.fetchone()['count']
         
         # 2. Recent Anomalies (Check-ins far from factory)
-        # We'll assume 'flagged' is a column or calculate distance here
-        cursor.execute("SELECT COUNT(*) FROM checkins WHERE timestamp::date = CURRENT_DATE AND latitude IS NULL") # Example check
+        cursor.execute("SELECT COUNT(*) FROM checkins WHERE timestamp::date = CURRENT_DATE AND latitude IS NULL")
         anomalies = cursor.fetchone()['count']
         
         cursor.close()
         conn.close()
         
+        # FIX 4: Fixed Python datetime usage (was DateTime.now().iso8601() which doesn't exist)
         return {
             "active_now": total_today,
             "anomalies": anomalies,
             "system_health": "Optimal",
-            "last_sync": DateTime.now().iso8601()
+            "last_sync": datetime.datetime.now().isoformat()
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -131,9 +136,14 @@ async def login(credentials: dict):
         cursor.close()
         conn.close()
         if user:
-            return {"status": "success", "user": user}
-        raise HTTPException(status_code=401, detail="Invalid Credentials")
+            # Don't send password back to the client
+            safe_user = {"employee_id": user["employee_id"], "name": user["name"]}
+            return {"status": "success", "user": safe_user}
+        return {"status": "error", "detail": "Invalid Credentials"}
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"❌ Login Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/v1/checkin")
