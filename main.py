@@ -128,24 +128,36 @@ async def login(credentials: LoginRequest):
 
 @app.post("/v1/checkin")
 async def receive_checkin(data: CheckInPayload):
-    """
-    The Core 'Zero-Click' Endpoint.
-    Validates GPS against Geofence before logging.
-    """
     try:
-        # 1. Geofence Validation
-        distance = calculate_distance(data.latitude, data.longitude, TARGET_LAT, TARGET_LNG)
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        # 1. 🔍 DYNAMIC LOOKUP: Find the site in your Supabase 'sites' table
+        cursor.execute(
+            "SELECT latitude, longitude, radius_meters FROM sites WHERE id = %s", 
+            (data.site_id,)
+        )
+        site = cursor.fetchone()
+
+        if not site:
+             # This happens if the QR code ID doesn't exist in your table
+             raise HTTPException(status_code=404, detail="Site ID not recognized")
+
+        # 2. Use the coordinates directly from the database row
+        target_lat = site['latitude']
+        target_lng = site['longitude']
+        radius = site['radius_meters']
+
+        # 3. Calculate distance from your phone's GPS to the DB coordinates
+        distance = calculate_distance(data.latitude, data.longitude, target_lat, target_lng)
         
-        if distance > GEOFENCE_RADIUS_METERS:
-            # This triggers the "Double-Buzz" red error on the OnePlus 5
+        if distance > radius:
             raise HTTPException(
                 status_code=403, 
                 detail=f"Outside Geofence: {int(distance)}m from site."
             )
 
-        # 2. Log Authorized Check-in
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        # 4. Log Authorized Check-in
         cursor.execute("""
             INSERT INTO checkins (employee_id, device_id, site_id, latitude, longitude)
             VALUES (%s, %s, %s, %s, %s)
@@ -155,13 +167,7 @@ async def receive_checkin(data: CheckInPayload):
         cursor.close()
         conn.close()
 
-        # 3. Success Response
-        # This triggers the "Satisfying Haptic" green checkmark on the phone
-        return {
-            "status": "success", 
-            "message": "Check-in Verified",
-            "distance_m": int(distance)
-        }
+        return {"status": "success", "message": "Check-in Verified", "distance_m": int(distance)}
 
     except HTTPException:
         raise
