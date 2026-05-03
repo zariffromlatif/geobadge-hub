@@ -157,7 +157,26 @@ async def receive_checkin(data: CheckInPayload):
                 detail=f"Outside Geofence: {int(distance)}m from site."
             )
 
-        # 4. Log Authorized Check-in
+        # 4. One check-in per employee per site per calendar day (local server date)
+        today_date = datetime.datetime.now().date()
+        cursor.execute(
+            """
+            SELECT id FROM checkins
+            WHERE employee_id = %s
+              AND site_id = %s
+              AND timestamp::date = %s
+            """,
+            (data.employee_id, data.site_id, today_date),
+        )
+        if cursor.fetchone():
+            cursor.close()
+            conn.close()
+            raise HTTPException(
+                status_code=400,
+                detail="Duplicate Check-in: You have already verified at this site today.",
+            )
+
+        # 5. Log Authorized Check-in
         cursor.execute("""
             INSERT INTO checkins (employee_id, device_id, site_id, latitude, longitude)
             VALUES (%s, %s, %s, %s, %s)
